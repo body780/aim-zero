@@ -1,0 +1,87 @@
+name: Windows 便携版
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    env:
+      GODOT_TAG: 4.7.2-stable
+      GODOT_TEMPLATE_VERSION: 4.7.2.stable
+      GODOT_EDITOR_SHA512: 83decd58fdf67b9d657958a1ae6bf1929c20785315a81effe245874cdc57acb709bf868e00778a96984338c1b29dafdb453c6847747694621c6ecf5da2259993
+      GODOT_TEMPLATES_SHA512: ca4d71c4d7b81dfc15d1a98baa07534aa95b03fdda78a0075b06672e1648d2e5f40980c9adc28d23e1b92e732ee7bf3461997aa804af74ec2fcd7a93ccb84079
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        id: godot-cache
+        with:
+          path: |
+            ${{ runner.temp }}/godot-aim-zero
+            ~/AppData/Roaming/Godot/export_templates/4.7.2.stable
+          key: godot-aim-zero-windows-4.7.2-stable-v1
+      - name: 安装 Godot 与导出模板
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = "https://github.com/godotengine/godot-builds/releases/download/$env:GODOT_TAG"
+          $editor = Join-Path $env:RUNNER_TEMP 'godot-aim-zero.zip'
+          $templates = Join-Path $env:RUNNER_TEMP 'godot-aim-zero-templates.zip'
+          curl.exe --fail --silent --show-error --location --retry 3 "$release/Godot_v${env:GODOT_TAG}_win64.exe.zip" -o $editor
+          if ($LASTEXITCODE -ne 0) { throw 'Godot 下载失败' }
+          curl.exe --fail --silent --show-error --location --retry 3 "$release/Godot_v${env:GODOT_TAG}_export_templates.tpz" -o $templates
+          if ($LASTEXITCODE -ne 0) { throw '导出模板下载失败' }
+          if ((Get-FileHash $editor -Algorithm SHA512).Hash -ne $env:GODOT_EDITOR_SHA512) { throw 'Godot 校验失败' }
+          if ((Get-FileHash $templates -Algorithm SHA512).Hash -ne $env:GODOT_TEMPLATES_SHA512) { throw '导出模板校验失败' }
+          Expand-Archive -LiteralPath $editor -DestinationPath (Join-Path $env:RUNNER_TEMP 'godot-aim-zero')
+          $target = Join-Path $env:APPDATA "Godot/export_templates/$env:GODOT_TEMPLATE_VERSION"
+          New-Item -ItemType Directory -Force $target | Out-Null
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead($templates)
+          try {
+            $template = $archive.GetEntry('templates/windows_release_x86_64.exe')
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($template, (Join-Path $target $template.Name), $true)
+          } finally {
+            $archive.Dispose()
+          }
+      - name: 运行测试并导出 Windows EXE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $godot = Get-ChildItem (Join-Path $env:RUNNER_TEMP 'godot-aim-zero') -Filter '*_console.exe' -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          & $godot --headless --editor --path . --import
+          if ($LASTEXITCODE -ne 0) { throw '项目导入失败' }
+          & $godot --headless --path . --script tests/run.gd
+          if ($LASTEXITCODE -ne 0) { throw '训练自动化测试失败' }
+          New-Item -ItemType Directory -Force build/windows | Out-Null
+          & $godot --headless --path . --export-release Windows build/windows/AIM-ZERO.exe
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path build/windows/AIM-ZERO.exe)) { throw 'Windows 导出失败' }
+      - name: 运行 Windows 导出产物并生成压缩包
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:RUNNER_TEMP 'aim-zero-smoke.log'
+          $process = Start-Process -FilePath ./build/windows/AIM-ZERO.exe -ArgumentList '--headless', '--log-file', ('"' + $log + '"'), '--', '--smoke-test' -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Windows 运行测试超时' }
+          if (Test-Path $log) { Get-Content $log }
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $log) -or -not (Select-String -Quiet -SimpleMatch -Path $log 'AIM_ZERO_SMOKE_OK')) { throw 'Windows 运行测试失败' }
+          Copy-Item '使用说明.txt' build/windows/
+          New-Item -ItemType Directory -Force build/windows/licenses | Out-Null
+          Copy-Item licenses/*.txt, assets/LICENSE-font.txt build/windows/licenses/
+          Compress-Archive -Path build/windows/* -DestinationPath build/AIM-ZERO-Windows.zip -CompressionLevel Optimal -Force
+          if ((Get-Item build/AIM-ZERO-Windows.zip).Length -gt 100000000) { throw 'Windows 压缩包超过 100 MB' }
+          (Get-FileHash build/AIM-ZERO-Windows.zip -Algorithm SHA256).Hash.ToLower() + '  AIM-ZERO-Windows.zip' | Set-Content -Encoding ascii build/AIM-ZERO-Windows.zip.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AIM-ZERO-Windows
+          path: |
+            build/AIM-ZERO-Windows.zip
+            build/AIM-ZERO-Windows.zip.sha256
+          compression-level: 0
+          if-no-files-found: error

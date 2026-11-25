@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>零点练枪 · AIM ZERO</title>
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { color: #edf0f7; background: #0b0e15; font-family: system-ui, sans-serif; }
+    #canvas { display: block; outline: none; touch-action: none; }
+    #status { position: fixed; inset: 0; display: grid; align-content: center; justify-items: center; gap: 1.25rem; padding: 2rem; text-align: center; }
+    progress { width: min(24rem, 80vw); accent-color: #ff4059; }
+  </style>
+  $GODOT_HEAD_INCLUDE
+</head>
+<body>
+  <canvas id="canvas" aria-label="零点练枪">浏览器不支持画布，请使用支持 WebGL 2 的桌面浏览器。</canvas>
+  <noscript>请启用 JavaScript 后重新加载页面。</noscript>
+  <div id="status" hidden>
+    <span id="message">正在加载零点练枪</span>
+    <progress id="progress" aria-label="加载进度"></progress>
+  </div>
+  <script src="$GODOT_URL"></script>
+  <script>
+    const config = $GODOT_CONFIG;
+    const status = document.getElementById("status");
+    const progress = document.getElementById("progress");
+    const message = document.getElementById("message");
+    const engine = new Engine(config);
+    status.hidden = false;
+    function showError(error, text) {
+      console.error(error);
+      progress.hidden = true;
+      message.textContent = text;
+    }
+    const missing = Engine.getMissingFeatures({threads: $GODOT_THREADS_ENABLED});
+    if (missing.length) {
+      showError(missing, "浏览器缺少运行所需功能。请使用支持 WebGL 2 的桌面浏览器。");
+    } else {
+      engine.startGame({
+        onProgress(loaded, total) {
+          if (total > 0) {
+            progress.max = total;
+            progress.value = loaded;
+          }
+        }
+      }).then(() => status.remove(), error => {
+        showError(error, "加载失败。请检查页面所需文件后刷新重试。");
+      });
+    }
+  </script>
+</body>
+</html>
