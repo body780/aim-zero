@@ -48,9 +48,7 @@ func update_session(session: RangeSession) -> void:
 		_:
 			hint = ""
 	if session is BenchmarkSession:
-		if session.spec.pattern == "ground":
-			hint = "连续靶  %d / 6" % session.eliminations
-		elif session.spec.mag > 0:
+		if session.spec.mag > 0:
 			hint = "装填中" if session.reloading else "弹匣  %d / %d" % [session.magazine,session.spec.mag]
 	queue_redraw()
 

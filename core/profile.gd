@@ -140,7 +140,7 @@ static func _validated_report(item: Variant) -> Dictionary:
 	var seconds := 0.0
 	for detail: Variant in stages:
 		var stage := _validated_metrics(detail)
-		if stage.is_empty() or (stage.mode not in Drills.ADAPTIVE_MODES and not BenchmarkCatalog.ITEMS.has(stage.mode)):
+		if stage.is_empty() or (stage.mode not in Drills.ADAPTIVE_MODES and not BenchmarkCatalog.known(stage.mode)):
 			return {}
 		subs.append(stage)
 		seconds += stage.seconds
@@ -161,7 +161,7 @@ static func _validated_report(item: Variant) -> Dictionary:
 
 
 static func _validated_metrics(data: Variant) -> Dictionary:
-	if not data is Dictionary or (data.get("mode") not in Drills.TITLES and not BenchmarkCatalog.ITEMS.has(data.get("mode"))) or not _finite(data.get("seconds"), 0.01, 1000.0 if BenchmarkCatalog.ITEMS.has(data.get("mode")) else 600.0):
+	if not data is Dictionary or (data.get("mode") not in Drills.TITLES and not BenchmarkCatalog.known(data.get("mode"))) or not _finite(data.get("seconds"), 0.01, 1000.0 if BenchmarkCatalog.known(data.get("mode")) else 600.0):
 		return {}
 	var result := {"mode": data.mode, "seconds": float(data.seconds)}
 	for name: String in TrainingMetrics.COUNTERS:

@@ -44,6 +44,7 @@ var settled_for := Drills.SETTLE_SECONDS
 var lane_start := 0.0
 var pending_at := 0.0
 var shot_ready := 0.0
+var continuous_target := false
 var cover := false
 var peek_index := 0
 var track_phase := 0.0
@@ -234,7 +235,7 @@ func present(alpha: float, look: Vector2, vertical: float, aspect: float, record
 		var difference := point - visible_eye
 		var depth := forward.dot(difference)
 		target.visible = depth > 0.0 and absf(up.dot(difference)) <= depth * half_height and absf(right.dot(difference)) <= depth * half_height * aspect
-		if not record or target.seen_at >= 0.0 or not target.visible or stage_mode in ["grid", "track"]:
+		if not record or target.seen_at >= 0.0 or not target.visible or continuous_target or stage_mode in ["grid", "track"]:
 			continue
 		var distance := difference.length()
 		if RangeGeometry.obstruction(visible_eye, difference / distance, cover) < distance:

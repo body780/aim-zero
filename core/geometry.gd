@@ -40,7 +40,7 @@ static func angular_error(wanted: Vector2, actual: Vector2) -> Vector2:
 static func sphere_distance(origin: Vector3, ray: Vector3, center: Vector3, radius: float) -> float:
 	var offset := origin - center
 	var projection := offset.dot(ray)
-	var discriminant := projection * projection - offset.length_squared() + radius * radius
+	var discriminant := radius * radius - offset.cross(ray).length_squared()
 	if discriminant < 0.0:
 		return INF
 	var radius_offset := sqrt(discriminant)

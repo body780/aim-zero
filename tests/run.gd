@@ -39,7 +39,7 @@ func run() -> void:
 	var fov := Drills.vertical_fov(103.0)
 	expect(absf(rad_to_deg(2.0 * atan(tan(deg_to_rad(fov) * 0.5) * 16.0 / 9.0)) - 103.0) < 0.0001, "水平与垂直视野换算")
 	expect(LocalProfile.LIMITS == [60, 120, 144, 165, 180, 240, 360, 480, 500, 600, 1000, 0], "完整帧率限额")
-	expect(BenchmarkCatalog.ITEMS.size() == 36, "完整基准目录")
+	expect(BenchmarkCatalog.ITEMS.size() == 5, "完整基准目录")
 	for key: String in BenchmarkCatalog.ITEMS:
 		var bench := BenchmarkSession.new()
 		bench.begin(key,60,3,[],72)
@@ -56,18 +56,7 @@ func run() -> void:
 	expect(reload_drill.reloading and reload_drill.shoot(Vector2.ZERO)==0, "三次脱靶后空仓")
 	wait_ticks(reload_drill,100)
 	expect(not reload_drill.reloading and reload_drill.magazine==3,"半秒重新装填")
-	var plaza := BenchmarkSession.new()
-	plaza.begin("Ground Plaza Sparky V3",60,3,[],60)
-	for opponent in 6:
-		plaza.health[0] = 1
-		plaza.shoot(aim(plaza,plaza.targets[0].position))
-		expect(not plaza.targets[0].active and plaza.eliminations==opponent+1, "连续击破地面目标")
-		if opponent < 5:
-			wait_ticks(plaza,350)
-			expect(not plaza.targets[0].active,"换靶间隔")
-			wait_ticks(plaza,12)
-	plaza.step(Vector2.ZERO,Vector2.ZERO)
-	expect(plaza.finished and plaza.report().eliminations==6,"击破六靶结束本轮")
+	_focus_tests()
 	var grid := start("grid")
 	show(grid)
 	expect(grid.targets.filter(func(target): return target.active).size() == 6, "六靶同场")
@@ -217,3 +206,47 @@ func _test_data(session: RangeSession) -> void:
 		for extension: String in ["", ".bak", ".tmp"]:
 			if FileAccess.file_exists(path + extension):
 				DirAccess.remove_absolute(path + extension)
+
+func _focus_tests() -> void:
+	for name: String in BenchmarkCatalog.ITEMS:
+		var bench := BenchmarkSession.new()
+		bench.begin(name,60,3,[],944)
+		var t := bench.targets[0]
+		var eye := bench.player+Vector3.UP*Drills.EYE_HEIGHT
+		var ray := (t.position-eye).normalized()
+		var edge := asin(t.radius/eye.distance_to(t.position))
+		var axis := ray.cross(Vector3.UP).normalized()
+		expect(edge < deg_to_rad(1.2),name+" 视角半径")
+		expect(RangeGeometry.sphere_distance(eye,ray.rotated(axis,edge*.99),t.position,t.radius)<INF,name+" 内缘命中")
+		expect(RangeGeometry.sphere_distance(eye,ray.rotated(axis,edge*1.02),t.position,t.radius)==INF,name+" 外缘脱靶")
+		if bench.spec.pattern in ["wall","pair"]:
+			var bins := {}
+			for repeat in 100:
+				var old := t.position
+				bench.shoot(aim(bench,old))
+				bins[Vector2i(t.position.x*20,t.position.y*20)] = true
+				expect(old.distance_to(t.position)>t.radius*3.9,name+" 刷新间距")
+				wait_ticks(bench,25)
+			expect(bins.size()>65,name+" 连续空间分布")
+			if bench.spec.pattern=="pair":
+				expect(t.radius < .05 and absf(t.position.x)<.8,"微调角尺寸与刷新范围")
+		else:
+			var copy := BenchmarkSession.new()
+			copy.begin(name,60,3,[],945)
+			var velocities := {}
+			var max_change := 0.0
+			var prev_v := Vector3.ZERO
+			for tick in 2400:
+				var old := t.position
+				bench.trigger_held = true
+				bench.step(Vector2.ZERO,aim(bench,t.position))
+				copy.step(Vector2.ZERO,Vector2.ZERO)
+				var velocity := (t.position-old)/Drills.STEP
+				if tick > 5: max_change = maxf(max_change,velocity.distance_to(prev_v))
+				prev_v = velocity
+				if tick%24==0: velocities[Vector2i(velocity.x*10,velocity.y*10)]=true
+			expect(velocities.size()>12 and t.position.distance_to(copy.targets[0].position)>.05,name+" 独立种子及变化运动")
+			if bench.spec.pattern=="smooth": expect(max_change<.15,"平滑变速连续性")
+			if bench.spec.pattern=="reactive": expect(max_change>.04 and max_change<.15,"反应靶快速受限加速度")
+			if bench.automatic(): expect(absf(bench.metrics.values.track_on-10)<.002,name+" 持续在靶计分")
+			if bench.spec.pattern=="pasu": expect(absf(t.position.x)<3.86 and absf(t.position.z+14)<.001,"动态点击场地边界")

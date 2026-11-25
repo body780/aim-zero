@@ -26,4 +26,5 @@ jobs:
           cd dist
           sha256sum -c AIM-ZERO-Windows.zip.sha256
           unzip -j AIM-ZERO-Windows.zip AIM-ZERO.exe
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title 'AIM ZERO v0.2.0' --notes '新增 Viscose S2 精选九个系列、四档共 36 项离线训练。运动和得分为本地模拟，具体研究来源及待校准参数见源码中的 CALIBRATION.md。' AIM-ZERO-Windows.zip AIM-ZERO.exe AIM-ZERO-Windows.zip.sha256
+          gh release upload "$GITHUB_REF_NAME" --clobber AIM-ZERO-Windows.zip AIM-ZERO.exe AIM-ZERO-Windows.zip.sha256
+          gh release edit "$GITHUB_REF_NAME" --title 'AIM ZERO v0.2.0' --notes '新增 Viscose S2 精选五项离线训练。运动和得分为本地模拟，具体研究来源及待校准参数见源码中的 CALIBRATION.md。'

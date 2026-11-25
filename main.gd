@@ -81,6 +81,8 @@ func _physics_process(_delta: float) -> void:
 		started = true
 		hud.ready_until = 0
 	var movement := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	if session is BenchmarkSession:
+		session.trigger_held = shooting
 	if session.step(movement, look):
 		if session.finished:
 			finish_pending = true
@@ -351,11 +353,11 @@ func _smoke() -> void:
 	await get_tree().process_frame
 	checks.append(not playing and not profile.records.is_empty())
 	checks.append(not LocalProfile.read_backup(profile.path).is_empty())
-	screens.benchmarks(0)
+	screens.benchmarks()
 	var library_buttons := screens.page.find_children("*", "Button", true, false)
 	var found := false
 	for button: Button in library_buttons:
-		if button.text == "Smoothsphere Viscose Easier":
+		if button.text.ends_with("Smoothsphere Viscose"):
 			button.pressed.emit()
 			found = true
 			break

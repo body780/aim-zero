@@ -98,32 +98,21 @@ func _nav(body: VBoxContainer) -> void:
 	body.add_child(top)
 	_brand(top)
 	_space(top)
-	_button(top, "Viscose S2 场景库", func(): benchmarks(0))
+	_button(top, "Viscose S2 场景库", func(): benchmarks())
 	_button(top, "训练记录", app.open_history)
 	_button(top, "设置", app.open_settings)
 	_button(top, "操作指南", app.open_guide)
 	_rule(body)
 
 
-func benchmarks(tier: int) -> void:
+func benchmarks() -> void:
 	var body := _shell(true)
-	_heading(body, "Viscose S2 场景库", "每档 9 项 · 地面连续靶按完成用时计分 · 运动与得分为本地校准版")
-	var tabs := HBoxContainer.new()
-	body.add_child(tabs)
-	for i in 4:
-		_button(tabs, ["入门 · Easier","中等 · Medium","困难 · Hard","专家 · Expert"][i], func(): benchmarks(i), i == tier)
-	var search := LineEdit.new()
-	search.placeholder_text = "按英文名称查找"
-	body.add_child(search)
+	_heading(body, "Viscose S2 精选", "五项专项训练 · 每轮 60 秒")
 	var list := _scroller(body)
-	for name: String in BenchmarkCatalog.ITEMS:
-		if BenchmarkCatalog.ITEMS[name].tier == tier:
-			var entry := _button(list, name, func(): app.start(name, 60))
-			entry.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	search.text_changed.connect(func(query: String):
-		for entry: Button in list.get_children():
-			entry.visible = entry.text.containsn(query.strip_edges())
-	)
+	for title: String in BenchmarkCatalog.ITEMS:
+		var entry := _button(list, "%s    %s" % [BenchmarkCatalog.ITEMS[title].label,title], func(): app.start(title,60))
+		entry.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		entry.custom_minimum_size.y = 65
 
 func _heading(body: VBoxContainer, title: String, detail: String) -> void:
 	var row := HBoxContainer.new()
@@ -497,13 +486,13 @@ func report(data: Dictionary) -> void:
 		if stage.mode in ["head", "peek"]:
 			human_hits += stage.hits
 	_stat(row, "命中率", TrainingMetrics.percent(data.hits, data.shots))
-	if BenchmarkCatalog.ITEMS.has(data.mode):
-		var config: Dictionary = BenchmarkCatalog.ITEMS[data.mode]
+	if BenchmarkCatalog.known(data.mode):
+		var config: Dictionary = BenchmarkCatalog.ITEMS.get(data.mode, BenchmarkCatalog.PRIOR.get(data.mode))
 		var points: float = data.eliminations * config.multiplier
 		var accuracy := TrainingMetrics.ratio(data.hits, data.shots)
 		match config.score:
 			"remaining": points = maxf(0,1000-data.seconds) if data.eliminations >= 6 else 0.0
-			"damage": points = data.hits * .05 * config.multiplier
+			"damage": points = (data.track_on if data.track_ticks > 0 else data.hits * .05) * config.multiplier
 			"sqrt": points *= sqrt(accuracy)
 			"accuracy": points *= accuracy
 		_stat(row, "本地模拟分", "%.1f" % points)
@@ -543,7 +532,8 @@ func report(data: Dictionary) -> void:
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 10)
 	body.add_child(actions)
-	_button(actions, "再练一轮", func(): app.start(data.mode, int(data.seconds)), true)
+	if Drills.TITLES.has(data.mode) or BenchmarkCatalog.ITEMS.has(data.mode):
+		_button(actions, "再练一轮", func(): app.start(data.mode, int(data.seconds)), true)
 	_button(actions, "训练记录", app.open_history)
 	_space(actions)
 	status = RangeStyle.text("", 15, RangeStyle.RED)
