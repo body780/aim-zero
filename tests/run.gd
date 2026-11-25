@@ -209,6 +209,7 @@ func _test_data(session: RangeSession) -> void:
 
 func _focus_tests() -> void:
 	for name: String in BenchmarkCatalog.ITEMS:
+		expect(_render_trace(name,60)==_render_trace(name,500) and _render_trace(name,500)==_render_trace(name,1000),name+" 跨帧率一致性")
 		var bench := BenchmarkSession.new()
 		bench.begin(name,60,3,[],944)
 		var t := bench.targets[0]
@@ -250,3 +251,18 @@ func _focus_tests() -> void:
 			if bench.spec.pattern=="reactive": expect(max_change>.04 and max_change<.15,"反应靶快速受限加速度")
 			if bench.automatic(): expect(absf(bench.metrics.values.track_on-10)<.002,name+" 持续在靶计分")
 			if bench.spec.pattern=="pasu": expect(absf(t.position.x)<3.86 and absf(t.position.z+14)<.001,"动态点击场地边界")
+
+func _render_trace(name: String, fps: int) -> Array:
+	var bench := BenchmarkSession.new()
+	bench.begin(name,60,3,[],234)
+	var credit := 0
+	for tick in 960:
+		var look := aim(bench,bench.targets[0].position)
+		bench.trigger_held = true
+		bench.step(Vector2.ZERO,look)
+		credit += fps
+		while credit >= 240:
+			credit -= 240
+			bench.present(.5,look,Drills.vertical_fov(103),16.0/9.0)
+		if tick%48 == 0: bench.shoot(look)
+	return [bench.targets[0].position,bench.elapsed,bench.metrics.values.hits,bench.metrics.values.track_on]

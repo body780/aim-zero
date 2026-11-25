@@ -43,7 +43,7 @@ func _spawn(i: int) -> void:
 	var pos := eye
 	match spec.pattern:
 		"wall": pos += _sample_wall(i,3.9,1.40)
-		"pair": pos += _sample_wall(i,.79,.47)
+		"pair": pos += _sample_pair(i)
 		"pasu":
 			pos += _sample_wall(i,3.55,1.22)
 			headings[i] = rng.randf_range(-PI,PI)
@@ -76,6 +76,20 @@ func _sample_wall(i: int, half_width: float, half_height: float) -> Vector3:
 				clear = false
 		if clear: break
 	return point
+
+func _sample_pair(i: int) -> Vector3:
+	var other := targets[1-i]
+	if not other.active:
+		return Vector3(rng.randf_range(-.4,.4),rng.randf_range(-.25,.25),-DEPTH)
+	var anchor := other.position - Vector3(0,Drills.EYE_HEIGHT,-6)
+	for attempt in 64:
+		var direction := Vector2.from_angle(rng.randf_range(-PI,PI))
+		var offset := direction * sqrt(rng.randf_range(.22*.22,.95*.95))
+		var candidate := anchor + Vector3(offset.x,offset.y,0)
+		if absf(candidate.x) <= .79 and absf(candidate.y) <= .47:
+			if (candidate + Vector3(0,Drills.EYE_HEIGHT,-6)).distance_to(last_spawn) > spec.radius*4:
+				return candidate
+	return _sample_wall(i,.79,.47)
 
 func step(move: Vector2, look: Vector2, delta: float = Drills.STEP) -> bool:
 	if super.step(move,look,delta): return true
