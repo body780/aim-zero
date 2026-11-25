@@ -39,6 +39,35 @@ func run() -> void:
 	var fov := Drills.vertical_fov(103.0)
 	expect(absf(rad_to_deg(2.0 * atan(tan(deg_to_rad(fov) * 0.5) * 16.0 / 9.0)) - 103.0) < 0.0001, "水平与垂直视野换算")
 	expect(LocalProfile.LIMITS == [60, 120, 144, 165, 180, 240, 360, 480, 500, 600, 1000, 0], "完整帧率限额")
+	expect(BenchmarkCatalog.ITEMS.size() == 36, "完整基准目录")
+	for key: String in BenchmarkCatalog.ITEMS:
+		var bench := BenchmarkSession.new()
+		bench.begin(key,60,3,[],72)
+		for tick in 120:
+			bench.step(Vector2.ZERO,Vector2.ZERO)
+		var point := bench.targets[0].point(false)
+		show(bench, aim(bench, point))
+		expect(bench.shoot(aim(bench,point)) >= 2 and bench.metrics.values.shots == 1, key)
+	var reload_drill := BenchmarkSession.new()
+	reload_drill.begin("1w6ts reload v2",60,3,[],90)
+	for shot in 3:
+		reload_drill.shoot(Vector2(PI,0))
+		wait_ticks(reload_drill,24)
+	expect(reload_drill.reloading and reload_drill.shoot(Vector2.ZERO)==0, "三次脱靶后空仓")
+	wait_ticks(reload_drill,100)
+	expect(not reload_drill.reloading and reload_drill.magazine==3,"半秒重新装填")
+	var plaza := BenchmarkSession.new()
+	plaza.begin("Ground Plaza Sparky V3",60,3,[],60)
+	for opponent in 6:
+		plaza.health[0] = 1
+		plaza.shoot(aim(plaza,plaza.targets[0].position))
+		expect(not plaza.targets[0].active and plaza.eliminations==opponent+1, "连续击破地面目标")
+		if opponent < 5:
+			wait_ticks(plaza,350)
+			expect(not plaza.targets[0].active,"换靶间隔")
+			wait_ticks(plaza,12)
+	plaza.step(Vector2.ZERO,Vector2.ZERO)
+	expect(plaza.finished and plaza.report().eliminations==6,"击破六靶结束本轮")
 	var grid := start("grid")
 	show(grid)
 	expect(grid.targets.filter(func(target): return target.active).size() == 6, "六靶同场")

@@ -5,6 +5,7 @@ var firing: AudioStreamPlayer
 var feedback: AudioStreamPlayer
 var shot: AudioStreamWAV
 var hit: AudioStreamWAV
+var next_sound := 0
 var head: AudioStreamWAV
 
 
@@ -18,17 +19,21 @@ func _ready() -> void:
 	shot = _synth(0, 0.092)
 	hit = _synth(1, 0.087)
 	head = _synth(2, 0.142)
+	firing.stream = shot
 
 
 func fire(outcome: int, volume: float) -> void:
-	if volume <= 0.0:
+	var now := Time.get_ticks_usec()
+	if volume <= 0.0 or now < next_sound:
 		return
-	firing.volume_db = linear_to_db(volume * 0.65)
-	firing.stream = shot
+	next_sound = now + 42000
+	firing.volume_db = linear_to_db(volume * 0.55)
 	firing.play()
 	if outcome >= 2:
 		feedback.volume_db = linear_to_db(volume * 0.55)
-		feedback.stream = head if outcome == 3 else hit
+		var tone := head if outcome == 3 else hit
+		if feedback.stream != tone:
+			feedback.stream = tone
 		feedback.play()
 
 

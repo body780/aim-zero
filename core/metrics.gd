@@ -8,6 +8,7 @@ const X_LIMIT := 12.0
 const Y_LIMIT := 8.0
 
 const COUNTERS := [
+	"eliminations",
 	"shots", "hits", "heads", "reaction_n", "reaction_ms", "over", "under", "on",
 	"unsettled", "stop_shots", "expired", "opportunities", "track_ticks", "track_on", "preaim_n", "preaim_deg"
 ]

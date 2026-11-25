@@ -10,6 +10,8 @@ var hud: RangeHUD
 var session: RangeSession
 var performance := FrameMetrics.new()
 var look := Vector2.ZERO
+var yaw_remainder := 0.0
+var pitch_remainder := 0.0
 var sensitivity_radians := deg_to_rad(0.07 * 0.35)
 var vertical_fov := 73.74
 var raw_motion := true
@@ -88,7 +90,7 @@ func _physics_process(_delta: float) -> void:
 		arena.show_training(session, vertical_fov)
 		hud.update_session(session)
 		shooting = false
-	elif shooting and session.stage_mode == "track":
+	elif shooting and (session.stage_mode == "track" or (session is BenchmarkSession and session.automatic())):
 		_fire()
 
 
@@ -96,10 +98,13 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		if playing and not paused and started:
 			var movement: Vector2 = event.screen_relative if raw_motion else event.relative
-			look.x -= movement.x * sensitivity_radians
-			if look.x < -PI or look.x >= PI:
-				look.x = wrapf(look.x, -PI, PI)
-			look.y = clampf(look.y - movement.y * sensitivity_radians, -1.53, 1.53)
+			var yaw := look.x + yaw_remainder - movement.x * sensitivity_radians
+			if yaw < -PI or yaw >= PI:
+				yaw = wrapf(yaw, -PI, PI)
+			var pitch := clampf(look.y + pitch_remainder - movement.y * sensitivity_radians, -1.53, 1.53)
+			look = Vector2(yaw, pitch)
+			yaw_remainder = yaw - look.x
+			pitch_remainder = pitch - look.y
 		return
 	if event is InputEventMouseButton:
 		if playing and not paused and event.button_index == MOUSE_BUTTON_LEFT:
@@ -132,7 +137,7 @@ func _notification(what: int) -> void:
 func start(mode: String, seconds: int) -> void:
 	_save_settings()
 	var adaptive := profile.adaptive_choices()
-	session = RangeSession.new()
+	session = BenchmarkSession.new() if BenchmarkCatalog.ITEMS.has(mode) else RangeSession.new()
 	session.begin(mode, seconds, adaptive.level if mode == "adaptive" else 3, adaptive.order)
 	playing = true
 	paused = false
@@ -346,6 +351,20 @@ func _smoke() -> void:
 	await get_tree().process_frame
 	checks.append(not playing and not profile.records.is_empty())
 	checks.append(not LocalProfile.read_backup(profile.path).is_empty())
+	screens.benchmarks(0)
+	var library_buttons := screens.page.find_children("*", "Button", true, false)
+	var found := false
+	for button: Button in library_buttons:
+		if button.text == "Smoothsphere Viscose Easier":
+			button.pressed.emit()
+			found = true
+			break
+	checks.append(found and session is BenchmarkSession)
+	if found:
+		session.stage_elapsed = session.stage_duration - Drills.STEP
+		session.step(Vector2.ZERO,Vector2.ZERO)
+		_finish()
+		checks.append(not LocalProfile.read_backup(profile.path).is_empty())
 	DirAccess.remove_absolute(profile.path)
 	DirAccess.remove_absolute(profile.path + ".bak")
 	if false in checks:

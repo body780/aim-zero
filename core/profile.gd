@@ -140,7 +140,7 @@ static func _validated_report(item: Variant) -> Dictionary:
 	var seconds := 0.0
 	for detail: Variant in stages:
 		var stage := _validated_metrics(detail)
-		if stage.is_empty() or stage.mode not in Drills.ADAPTIVE_MODES:
+		if stage.is_empty() or (stage.mode not in Drills.ADAPTIVE_MODES and not BenchmarkCatalog.ITEMS.has(stage.mode)):
 			return {}
 		subs.append(stage)
 		seconds += stage.seconds
@@ -161,11 +161,11 @@ static func _validated_report(item: Variant) -> Dictionary:
 
 
 static func _validated_metrics(data: Variant) -> Dictionary:
-	if not data is Dictionary or data.get("mode") not in Drills.TITLES or not _finite(data.get("seconds"), 0.01, 600.0):
+	if not data is Dictionary or (data.get("mode") not in Drills.TITLES and not BenchmarkCatalog.ITEMS.has(data.get("mode"))) or not _finite(data.get("seconds"), 0.01, 1000.0 if BenchmarkCatalog.ITEMS.has(data.get("mode")) else 600.0):
 		return {}
 	var result := {"mode": data.mode, "seconds": float(data.seconds)}
 	for name: String in TrainingMetrics.COUNTERS:
-		var value: Variant = data.get(name)
+		var value: Variant = data.get(name, 0 if name == "eliminations" else null)
 		if not _finite(value, 0.0, 10000000000.0):
 			return {}
 		result[name] = float(value)
@@ -221,6 +221,8 @@ func adaptive_choices() -> Dictionary:
 	var evidence := {}
 	for report: Dictionary in records.slice(-24):
 		for stage: Dictionary in report.stages:
+			if stage.mode not in Drills.ADAPTIVE_MODES:
+				continue
 			var activity: float = stage.shots + stage.preaim_n + stage.opportunities * 0.3
 			if activity < 3.0:
 				continue

@@ -47,6 +47,9 @@ var shot_ready := 0.0
 var cover := false
 var peek_index := 0
 var track_phase := 0.0
+var track_rate := 1.0
+var track_turn := 0.0
+var track_goal := 1.0
 var grid_reference := Vector2.ZERO
 
 func _init() -> void:
@@ -130,7 +133,12 @@ func step(move: Vector2, look: Vector2, delta: float = Drills.STEP) -> bool:
 		var target := targets[0]
 		target.previous = target.position
 		var time := stage_elapsed - target.born
-		var phase := track_phase + time * (1.3 + level * 0.38)
+		if stage_elapsed >= track_turn:
+			track_goal = rng.randf_range(.65,1.55) * (-1.0 if rng.randf() < .45 else 1.0)
+			track_turn = stage_elapsed + rng.randf_range(.38,1.65)
+		track_rate = move_toward(track_rate,track_goal,delta*4.6)
+		track_phase += delta*(1.3 + level*.38)*track_rate
+		var phase := track_phase + .17*sin(time*1.77)
 		target.position = target.base + Vector3(sin(phase) * 2.42, sin(phase * 1.79) * 0.45, cos(phase * 0.62) * 0.48)
 		var ray := RangeGeometry.aim_direction(look)
 		var eye := player + Vector3.UP * Drills.EYE_HEIGHT
@@ -174,9 +182,14 @@ func _spawn(index: int) -> void:
 	var scale := 1.0 - (level - 3) * 0.082
 	match stage_mode:
 		"grid":
-			var elevation := 2.46 if index >= 3 else 1.03
-			target.base = Vector3((index % 3 - 1) * 2.12 + rng.randf_range(-0.49, 0.49), elevation + rng.randf_range(-0.27, 0.27), rng.randf_range(-10.5, -7.7))
-			target.radius = 0.34 * scale
+			for attempt in 32:
+				target.base = Vector3(rng.randf_range(-3.9, 3.9),rng.randf_range(.65,3.15),rng.randf_range(-11.6,-7.8))
+				var separated := true
+				for other in targets:
+					if other != target and other.active and target.base.normalized().angle_to(other.position.normalized()) < .085:
+						separated = false
+				if separated: break
+			target.radius = .235 * scale
 		"micro":
 			var offset := Vector2.from_angle(rng.randf_range(-PI, PI)) * rng.randf_range(0.24, 0.92)
 			var aim_at := targets[0].base if stage_elapsed > 0.0 else Vector3(0, Drills.EYE_HEIGHT, -8.7)
@@ -193,7 +206,7 @@ func _spawn(index: int) -> void:
 		"peek":
 			# Two inner positions require a wide swing. Outer positions require a new angle around a side block.
 			var points := [Vector3(-1.40, 0, -10.3), Vector3(1.35, 0, -10.5), Vector3(-5.0, 0, -12.7), Vector3(5.0, 0, -13.9)]
-			target.base = points[peek_index]
+			target.base = points[peek_index] + Vector3(rng.randf_range(-.58,.58),0,rng.randf_range(-.85,.45))
 			target.base.z -= (level - 3) * 0.30
 			peek_index = (peek_index + rng.randi_range(1, 3)) % points.size()
 		"reaction":

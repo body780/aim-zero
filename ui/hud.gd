@@ -47,6 +47,11 @@ func update_session(session: RangeSession) -> void:
 			hint = "按住左键，跟随移动目标"
 		_:
 			hint = ""
+	if session is BenchmarkSession:
+		if session.spec.pattern == "ground":
+			hint = "连续靶  %d / 6" % session.eliminations
+		elif session.spec.mag > 0:
+			hint = "装填中" if session.reloading else "弹匣  %d / %d" % [session.magazine,session.spec.mag]
 	queue_redraw()
 
 
@@ -76,7 +81,7 @@ func _draw() -> void:
 	var heading := stage
 	if not stage_progress.is_empty():
 		heading += "    " + stage_progress
-	_panel(Rect2(28, 25, 318, 81))
+	_panel(Rect2(28, 25, maxf(318,RangeStyle.FONT.get_string_size(heading,HORIZONTAL_ALIGNMENT_LEFT,-1,19).x + 36), 81))
 	_write(heading, Vector2(45, 55), 19, RangeStyle.PAPER)
 	_write("退出键  暂停", Vector2(45, 82), 13, RangeStyle.MUTED)
 	_panel(Rect2(center.x - 77, 25, 154, 66))

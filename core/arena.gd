@@ -43,7 +43,7 @@ func _ready() -> void:
 	world.environment = Environment.new()
 	world.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	world.environment.ambient_light_color = Color("#e1e9f8")
-	world.environment.ambient_light_energy = 0.65
+	world.environment.ambient_light_energy = 0.83
 	add_child(world)
 	world_light = DirectionalLight3D.new()
 	world_light.rotation_degrees = Vector3(-58, -35, 0)

@@ -98,11 +98,32 @@ func _nav(body: VBoxContainer) -> void:
 	body.add_child(top)
 	_brand(top)
 	_space(top)
+	_button(top, "Viscose S2 场景库", func(): benchmarks(0))
 	_button(top, "训练记录", app.open_history)
 	_button(top, "设置", app.open_settings)
 	_button(top, "操作指南", app.open_guide)
 	_rule(body)
 
+
+func benchmarks(tier: int) -> void:
+	var body := _shell(true)
+	_heading(body, "Viscose S2 场景库", "每档 9 项 · 地面连续靶按完成用时计分 · 运动与得分为本地校准版")
+	var tabs := HBoxContainer.new()
+	body.add_child(tabs)
+	for i in 4:
+		_button(tabs, ["入门 · Easier","中等 · Medium","困难 · Hard","专家 · Expert"][i], func(): benchmarks(i), i == tier)
+	var search := LineEdit.new()
+	search.placeholder_text = "按英文名称查找"
+	body.add_child(search)
+	var list := _scroller(body)
+	for name: String in BenchmarkCatalog.ITEMS:
+		if BenchmarkCatalog.ITEMS[name].tier == tier:
+			var entry := _button(list, name, func(): app.start(name, 60))
+			entry.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	search.text_changed.connect(func(query: String):
+		for entry: Button in list.get_children():
+			entry.visible = entry.text.containsn(query.strip_edges())
+	)
 
 func _heading(body: VBoxContainer, title: String, detail: String) -> void:
 	var row := HBoxContainer.new()
@@ -476,7 +497,18 @@ func report(data: Dictionary) -> void:
 		if stage.mode in ["head", "peek"]:
 			human_hits += stage.hits
 	_stat(row, "命中率", TrainingMetrics.percent(data.hits, data.shots))
-	_stat(row, "爆头率", TrainingMetrics.percent(data.heads, human_hits))
+	if BenchmarkCatalog.ITEMS.has(data.mode):
+		var config: Dictionary = BenchmarkCatalog.ITEMS[data.mode]
+		var points: float = data.eliminations * config.multiplier
+		var accuracy := TrainingMetrics.ratio(data.hits, data.shots)
+		match config.score:
+			"remaining": points = maxf(0,1000-data.seconds) if data.eliminations >= 6 else 0.0
+			"damage": points = data.hits * .05 * config.multiplier
+			"sqrt": points *= sqrt(accuracy)
+			"accuracy": points *= accuracy
+		_stat(row, "本地模拟分", "%.1f" % points)
+	else:
+		_stat(row, "爆头率", TrainingMetrics.percent(data.heads, human_hits))
 	_stat(row, "平均反应时间", TrainingMetrics.average_reaction(data))
 	_stat(row, "每分钟命中", "%.1f" % TrainingMetrics.hits_per_minute(data))
 	_stat(row, "拉枪 过度／不足", "%d / %d" % [int(data.over), int(data.under)] if data.over + data.under + data.on > 0 else "—")
