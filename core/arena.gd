@@ -177,8 +177,6 @@ func _build_cover() -> void:
 func _build_orb(tint: Color) -> Node3D:
 	var root := Node3D.new()
 	_piece(root, Vector3.ZERO, Vector3.ONE, tint, true, true)
-	_piece(root, Vector3(0, 0, 0.38), Vector3(0.55, 0.55, 0.19), Color("#7a2539"), true)
-	_piece(root, Vector3(0, 0, 0.49), Vector3(0.20, 0.20, 0.019), Color("#ffe1df"), true)
 	return root
 
 
@@ -190,11 +188,6 @@ func _build_robot() -> Node3D:
 		_piece(root, part[0], part[1], tint, false, true)
 		index += 1
 	_piece(root, RangeGeometry.HEAD, Vector3.ONE * RangeGeometry.HEAD_RADIUS * 2.0, Color("#d43851"), true, true)
-	_piece(root, Vector3(0, 1.654, 0.113), Vector3(0.173, 0.037, 0.029), Color("#fa8190"), true)
-	_piece(root, Vector3(0, 1.27, 0.137), Vector3(0.23, 0.18, 0.014), DARK)
-	_piece(root, Vector3(0, 1.27, 0.147), Vector3(0.126, 0.028, 0.012), RED)
-	_piece(root, Vector3(-0.168, 1.37, 0.137), Vector3(0.038, 0.055, 0.011), BLUE)
-	_piece(root, Vector3(0.168, 1.37, 0.137), Vector3(0.038, 0.055, 0.011), BLUE)
 	return root
 
 

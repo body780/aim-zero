@@ -3,7 +3,7 @@ extends RefCounted
 
 const LIMITS := [60, 120, 144, 165, 180, 240, 360, 480, 500, 600, 1000, 0]
 const DEFAULTS := {
-	"sensitivity": 0.35, "dpi": 800, "fov": 103.0, "fps_limit": 0, "fullscreen": false,
+	"difficulty": 3, "sensitivity": 0.35, "dpi": 800, "fov": 103.0, "fps_limit": 0, "fullscreen": false,
 	"vsync": false, "raw": true, "quality": 0, "perf": true, "audio": 0.65,
 	"color": "#75ffe0", "gap": 5, "length": 7, "thickness": 2, "dot": false, "outline": true
 }
@@ -18,6 +18,30 @@ var records: Array = []
 func _init(storage_path: String = "user://aim-zero.json") -> void:
 	path = storage_path
 
+
+static func open_for_app(directory: String, editor: bool, personal: String = "user://aim-zero.json") -> LocalProfile:
+	var local := LocalProfile.new(personal)
+	local.load_local()
+	if editor or not FileAccess.file_exists(directory.path_join("portable.flag")):
+		return local
+	var portable := LocalProfile.new(directory.path_join("aim-zero.json"))
+	var probe := directory.path_join(".aim-write-" + Crypto.new().generate_random_bytes(8).hex_encode())
+	var handle := FileAccess.open(probe, FileAccess.WRITE)
+	if not handle:
+		# Keep local history and merge readable portable records once by id.
+		if not FileAccess.file_exists(personal) and FileAccess.file_exists(portable.path):
+			local.import_from(portable.path)
+		return local
+	handle.close()
+	DirAccess.remove_absolute(probe)
+	if FileAccess.file_exists(portable.path) or FileAccess.file_exists(portable.path + ".bak"):
+		portable.load_local()
+	else:
+		portable.settings = local.settings.duplicate()
+		portable.records = local.records.duplicate(true)
+		if portable.save() != OK:
+			return local
+	return portable
 
 func load_local() -> void:
 	var parsed := read_backup(path)
@@ -110,9 +134,9 @@ static func _validated_settings(config: Dictionary) -> Dictionary:
 			result[key] = candidate
 	if config.get("color") is String and String(config.color).length() == 7 and String(config.color).begins_with("#") and Color.html_is_valid(config.color):
 		result.color = config.color
-	for name: String in ["sensitivity", "dpi", "fov", "gap", "length", "thickness", "quality", "audio"]:
+	for name: String in ["difficulty", "sensitivity", "dpi", "fov", "gap", "length", "thickness", "quality", "audio"]:
 		var bounds: Array = {
-			"sensitivity": [0.01, 10.0], "dpi": [100, 35000], "fov": [75.0, 120.0],
+			"difficulty": [1, 7], "sensitivity": [0.01, 10.0], "dpi": [100, 35000], "fov": [75.0, 120.0],
 			"gap": [0, 30], "length": [1, 30], "thickness": [1, 8], "quality": [0, 2], "audio": [0.0, 1.0]
 		}[name]
 		var value: Variant = config.get(name)
@@ -140,7 +164,7 @@ static func _validated_report(item: Variant) -> Dictionary:
 	var seconds := 0.0
 	for detail: Variant in stages:
 		var stage := _validated_metrics(detail)
-		if stage.is_empty() or (stage.mode not in Drills.ADAPTIVE_MODES and not BenchmarkCatalog.known(stage.mode)):
+		if stage.is_empty() or (stage.mode != "reactive" and stage.mode not in Drills.ADAPTIVE_MODES and not BenchmarkCatalog.known(stage.mode)):
 			return {}
 		subs.append(stage)
 		seconds += stage.seconds
@@ -153,6 +177,8 @@ static func _validated_report(item: Variant) -> Dictionary:
 	for counter: String in TrainingMetrics.COUNTERS:
 		if not is_equal_approx(summed.values[counter], result[counter]):
 			return {}
+	result["rules"] = int(item.get("rules", 2))
+	result["seed"] = str(item.get("seed", ""))
 	result["id"] = unique
 	result["timestamp"] = int(time)
 	result["stages"] = subs
@@ -165,7 +191,7 @@ static func _validated_metrics(data: Variant) -> Dictionary:
 		return {}
 	var result := {"mode": data.mode, "seconds": float(data.seconds)}
 	for name: String in TrainingMetrics.COUNTERS:
-		var value: Variant = data.get(name, 0 if name == "eliminations" else null)
+		var value: Variant = data.get(name, 0 if name in ["eliminations", "valid_heads", "release", "reverse"] else null)
 		if not _finite(value, 0.0, 10000000000.0):
 			return {}
 		result[name] = float(value)

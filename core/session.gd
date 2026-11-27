@@ -10,6 +10,8 @@ class Target:
 	var human := false
 	var active := false
 	var visible := false
+	var displayed := false
+	var expired_on_screen := false
 	var born := 0.0
 	var seen_at := -1.0
 	var seen_look := Vector2.ZERO
@@ -40,17 +42,26 @@ var player := Vector3.ZERO
 var previous_player := Vector3.ZERO
 var visible_eye := Vector3(0, Drills.EYE_HEIGHT, 0)
 var velocity := Vector3.ZERO
-var settled_for := Drills.SETTLE_SECONDS
+var accurate := true
 var lane_start := 0.0
 var pending_at := 0.0
 var shot_ready := 0.0
 var continuous_target := false
 var cover := false
 var peek_index := 0
-var track_phase := 0.0
-var track_rate := 1.0
-var track_turn := 0.0
-var track_goal := 1.0
+var motion := TrackingMotion.new()
+var trigger_held := false
+var last_track_time := 0.0
+var track_aligned := false
+var shown_look := Vector2.ZERO
+var shown_speed := 0.0
+var previous_velocity := Vector3.ZERO
+var shown_time := 0.0
+var shown_stop_kind := "release"
+var last_stop_kind := "release"
+var shot_feedback := ""
+var session_seed := 0
+var last_view := Vector2.ZERO
 var grid_reference := Vector2.ZERO
 
 func _init() -> void:
@@ -62,7 +73,8 @@ func begin(selected_mode: String, seconds: int, difficulty: int, order: Array, s
 	rng.randomize()
 	if seed_value != 0:
 		rng.seed = seed_value
-	spread_rng.seed = rng.seed ^ 314159
+	session_seed = rng.seed
+	spread_rng.seed = session_seed ^ 314159
 	mode = selected_mode
 	plan = Drills.schedule(mode, seconds, order)
 	level = clampi(difficulty, 1, 7)
@@ -73,6 +85,7 @@ func begin(selected_mode: String, seconds: int, difficulty: int, order: Array, s
 
 func _next_stage() -> void:
 	if stage_index >= 0:
+		_credit_tracking(stage_duration)
 		stages.append(metrics.snapshot(stage_mode, stage_duration))
 		total.merge(metrics)
 		if mode == "adaptive" and metrics.values.shots >= 3.0:
@@ -92,17 +105,26 @@ func _next_stage() -> void:
 	player = Vector3.ZERO
 	previous_player = player
 	velocity = Vector3.ZERO
-	settled_for = Drills.SETTLE_SECONDS
+	accurate = true
 	cover = stage_mode == "peek"
 	lane_start = player.x
 	pending_at = 0.0
 	shot_ready = 0.0
 	peek_index = rng.randi_range(0, 3)
-	track_phase = rng.randf_range(-PI, PI)
+	motion = TrackingMotion.new()
+	previous_velocity = Vector3.ZERO
+	shown_speed = 0.0
+	shown_time = 0.0
+	last_track_time = 0.0
+	track_aligned = false
+	last_view = Vector2.ZERO
+	shot_feedback = ""
 	grid_reference = Vector2.ZERO
 	for target: Target in targets:
 		target.active = false
-	var count := 6 if stage_mode == "grid" else 1
+		target.expired_on_screen = false
+		target.displayed = false
+	var count := 6 if stage_mode == "grid" else (3 if stage_mode == "head" else 1)
 	if stage_mode == "reaction":
 		pending_at = _reaction_delay()
 	elif stage_mode != "stop":
@@ -121,35 +143,30 @@ func step(move: Vector2, look: Vector2, delta: float = Drills.STEP) -> bool:
 			elapsed = duration
 		return true
 	previous_player = player
+	previous_velocity = velocity
+	last_view = look
 	if stage_mode == "stop" or stage_mode == "peek":
 		var desired := Vector3(move.x, 0, move.y).rotated(Vector3.UP, look.x) * Drills.MOVE_SPEED
-		var braking := desired.is_zero_approx() or velocity.dot(desired) < 0.0
-		velocity = velocity.move_toward(desired, (46.0 if braking else 33.0) * delta)
+		var reversing := velocity.dot(desired) < 0.0
+		if reversing:
+			last_stop_kind = "reverse"
+		elif desired.is_zero_approx() and velocity.length() > Drills.STOP_SPEED:
+			last_stop_kind = "release"
+		var brake := 52.0 if reversing else 38.0
+		velocity = velocity.move_toward(desired, (brake if reversing or desired.is_zero_approx() else 33.0) * delta)
 		player = RangeGeometry.move_player(player, velocity * delta, cover)
-		if velocity.length_squared() <= Drills.STOP_SPEED * Drills.STOP_SPEED:
-			settled_for = minf(Drills.SETTLE_SECONDS, settled_for + delta)
-		else:
-			settled_for = 0.0
-	if stage_mode == "track":
+		accurate = velocity.length() <= Drills.STOP_SPEED
+	if stage_mode in ["track", "reactive"]:
 		var target := targets[0]
 		target.previous = target.position
-		var time := stage_elapsed - target.born
-		if stage_elapsed >= track_turn:
-			track_goal = rng.randf_range(.65,1.55) * (-1.0 if rng.randf() < .45 else 1.0)
-			track_turn = stage_elapsed + rng.randf_range(.38,1.65)
-		track_rate = move_toward(track_rate,track_goal,delta*4.6)
-		track_phase += delta*(1.3 + level*.38)*track_rate
-		var phase := track_phase + .17*sin(time*1.77)
-		target.position = target.base + Vector3(sin(phase) * 2.42, sin(phase * 1.79) * 0.45, cos(phase * 0.62) * 0.48)
-		var ray := RangeGeometry.aim_direction(look)
-		var eye := player + Vector3.UP * Drills.EYE_HEIGHT
-		metrics.add("track_ticks", delta)
-		if RangeGeometry.sphere_distance(eye, ray, target.position, target.radius) < INF:
-			metrics.add("track_on", delta)
+		var direction := motion.advance(rng, stage_mode == "reactive", level, delta)
+		target.position = player + Vector3.UP * Drills.EYE_HEIGHT + direction * 7.8
+
 	elif stage_mode == "stop":
 		var target := targets[0]
 		if target.active and stage_elapsed - target.born >= 2.8 - float(level) * 0.15:
 			metrics.add("expired")
+			target.expired_on_screen = target.displayed
 			target.active = false
 			lane_start = player.x
 		elif not target.active and stage_elapsed >= pending_at and absf(player.x - lane_start) >= 0.87:
@@ -158,6 +175,7 @@ func step(move: Vector2, look: Vector2, delta: float = Drills.STEP) -> bool:
 		var target := targets[0]
 		if target.active and stage_elapsed - target.born >= _reaction_window():
 			metrics.add("expired")
+			target.expired_on_screen = target.displayed
 			target.active = false
 			pending_at = stage_elapsed + _reaction_delay()
 		elif not target.active and stage_elapsed >= pending_at:
@@ -177,32 +195,27 @@ func _spawn(index: int) -> void:
 	var target := targets[index]
 	target.active = true
 	target.visible = false
+	target.displayed = false
+	target.expired_on_screen = false
 	target.seen_at = -1.0
-	target.human = stage_mode in ["head", "peek"]
+	target.human = stage_mode in ["head", "peek", "stop"]
 	target.born = stage_elapsed
 	var scale := 1.0 - (level - 3) * 0.082
 	match stage_mode:
-		"grid":
-			for attempt in 32:
-				target.base = Vector3(rng.randf_range(-3.9, 3.9),rng.randf_range(.65,3.15),rng.randf_range(-11.6,-7.8))
-				var separated := true
-				for other in targets:
-					if other != target and other.active and target.base.normalized().angle_to(other.position.normalized()) < .085:
-						separated = false
-				if separated: break
-			target.radius = .235 * scale
+		"grid", "head":
+			var eye := player + Vector3.UP * Drills.EYE_HEIGHT
+			target.base = SpawnLayout.point(rng, eye, last_view.x, targets, index, target.human)
+			target.radius = 0.19 * scale
 		"micro":
-			var offset := Vector2.from_angle(rng.randf_range(-PI, PI)) * rng.randf_range(0.24, 0.92)
-			var aim_at := targets[0].base if stage_elapsed > 0.0 else Vector3(0, Drills.EYE_HEIGHT, -8.7)
-			target.base = Vector3(clampf(aim_at.x + offset.x, -2.5, 2.5), clampf(aim_at.y + offset.y * 0.58, 0.9, 2.5), -8.7)
-			target.radius = 0.147 * scale
-		"head":
-			target.base = Vector3(rng.randf_range(-4.1, 4.1), 0.0, rng.randf_range(-11.9, -7.5) - (level - 3) * 0.46)
-		"track":
+			var eye := player + Vector3.UP * Drills.EYE_HEIGHT
+			var anchor := RangeGeometry.angles(eye, target.base) if stage_elapsed > 0.0 else last_view
+			target.base = SpawnLayout.micro(rng, eye, anchor)
+			target.radius = 0.10 * scale
+		"track", "reactive":
 			target.base = Vector3(0.0, 1.65, -7.8)
-			target.radius = 0.415 * scale
+			target.radius = (0.20 if stage_mode == "track" else 0.27) * scale
 		"stop":
-			target.base = Vector3(clampf(player.x + rng.randf_range(-2.05, 2.05), -5.7, 5.7), Drills.EYE_HEIGHT + rng.randf_range(-0.18, 0.18), -8.4)
+			target.base = Vector3(clampf(player.x + rng.randf_range(-2.05, 2.05), -5.7, 5.7), 0.0, -8.4)
 			target.radius = 0.25 * scale
 		"peek":
 			# Two inner positions require a wide swing. Outer positions require a new angle around a side block.
@@ -221,6 +234,12 @@ func _spawn(index: int) -> void:
 
 
 func present(alpha: float, look: Vector2, vertical: float, aspect: float, record: bool = true) -> void:
+	shown_time = maxf(0.0, stage_elapsed - (1.0 - alpha) * Drills.STEP)
+	if record:
+		_credit_tracking(shown_time)
+	shown_stop_kind = last_stop_kind
+	shown_look = look
+	shown_speed = previous_velocity.lerp(velocity, alpha).length()
 	visible_eye = previous_player.lerp(player, alpha) + Vector3.UP * Drills.EYE_HEIGHT
 	var forward := RangeGeometry.aim_direction(look)
 	var right := Vector3(cos(look.x), 0, -sin(look.x))
@@ -229,18 +248,23 @@ func present(alpha: float, look: Vector2, vertical: float, aspect: float, record
 	for target: Target in targets:
 		if not target.active:
 			target.visible = false
+			target.expired_on_screen = false
+			target.displayed = false
 			continue
+		target.displayed = true
 		target.presented = target.previous.lerp(target.position, alpha)
+		if record and stage_mode in ["track", "reactive"]:
+			track_aligned = RangeGeometry.sphere_distance(visible_eye, forward, target.presented, target.radius) < INF
 		var point := target.point(true)
 		var difference := point - visible_eye
 		var depth := forward.dot(difference)
 		target.visible = depth > 0.0 and absf(up.dot(difference)) <= depth * half_height and absf(right.dot(difference)) <= depth * half_height * aspect
-		if not record or target.seen_at >= 0.0 or not target.visible or continuous_target or stage_mode in ["grid", "track"]:
+		if not record or target.seen_at >= 0.0 or not target.visible or continuous_target or stage_mode in ["grid", "track", "reactive"]:
 			continue
 		var distance := difference.length()
 		if RangeGeometry.obstruction(visible_eye, difference / distance, cover) < distance:
 			continue
-		target.seen_at = stage_elapsed
+		target.seen_at = shown_time
 		target.seen_look = look
 		target.seen_eye = visible_eye
 		if cover:
@@ -248,6 +272,15 @@ func present(alpha: float, look: Vector2, vertical: float, aspect: float, record
 			metrics.add("preaim_n")
 			metrics.add("preaim_deg", rad_to_deg(RangeGeometry.angular_error(RangeGeometry.angles(visible_eye, point), look).length()))
 
+
+func _credit_tracking(time: float) -> void:
+	if stage_mode not in ["track", "reactive"]:
+		return
+	var dt := maxf(0.0, time - last_track_time)
+	metrics.add("track_ticks", dt)
+	if trigger_held and track_aligned:
+		metrics.add("track_on", dt)
+	last_track_time = maxf(last_track_time, time)
 
 func can_shoot() -> bool:
 	return not finished and stage_elapsed + 0.000001 >= shot_ready
@@ -257,20 +290,21 @@ func shoot(look: Vector2) -> int:
 	# 0: blocked by cooldown, 1: miss, 2: body or sphere, 3: head.
 	if not can_shoot():
 		return 0
-	shot_ready = stage_elapsed + (0.0833333 if stage_mode == "track" else 0.1125)
+	shot_ready = stage_elapsed + (0.0833333 if stage_mode in ["track", "reactive"] else 0.1125)
 	metrics.add("shots")
 	var spread := 0.0
 	if stage_mode == "stop" or cover:
 		metrics.add("stop_shots")
-		var movement := velocity.length() / Drills.MOVE_SPEED
-		var recovery := 1.0 - settled_for / Drills.SETTLE_SECONDS
-		spread = deg_to_rad(maxf(movement * 6.0, recovery * 3.4))
-		if settled_for + 0.000001 < Drills.SETTLE_SECONDS:
+		var movement := clampf((shown_speed - Drills.STOP_SPEED) / (Drills.MOVE_SPEED - Drills.STOP_SPEED), 0, 1)
+		spread = deg_to_rad(movement * 6.0)
+		if movement > 0:
 			metrics.add("unsettled")
+		else:
+			metrics.add(shown_stop_kind)
 	var shot := look
 	if spread > 0.0:
 		shot += Vector2.from_angle(spread_rng.randf_range(-PI, PI)) * (sqrt(spread_rng.randf()) * spread)
-	var eye := player + Vector3.UP * Drills.EYE_HEIGHT
+	var eye := visible_eye
 	var ray := RangeGeometry.aim_direction(shot)
 	var nearest := RangeGeometry.obstruction(eye, ray, cover)
 	var hit_index := -1
@@ -279,9 +313,9 @@ func shoot(look: Vector2) -> int:
 	var intent_distance := INF
 	for index in targets.size():
 		var target := targets[index]
-		if not target.active:
+		if not target.displayed or (not target.active and not target.expired_on_screen):
 			continue
-		var target_point := target.point(false)
+		var target_point := target.point(true)
 		var distance := RangeGeometry.sphere_distance(eye, ray, target_point, RangeGeometry.HEAD_RADIUS if target.human else target.radius)
 		if distance < nearest:
 			nearest = distance
@@ -289,7 +323,7 @@ func shoot(look: Vector2) -> int:
 			hit_kind = 3 if target.human else 2
 		if target.human:
 			for part: Array in RangeGeometry.BODY:
-				var center: Vector3 = target.position + part[0]
+				var center: Vector3 = target.presented + part[0]
 				var size: Vector3 = part[1]
 				distance = RangeGeometry.box_distance(eye, ray, AABB(center - size * 0.5, size))
 				if distance < nearest:
@@ -308,19 +342,30 @@ func shoot(look: Vector2) -> int:
 		_record_aim(targets[intent_index], eye, look)
 	if stage_mode == "grid":
 		grid_reference = look
+	shot_feedback = "提前开枪" if (cover or stage_mode == "stop") and shown_speed > Drills.STOP_SPEED else ""
 	if hit_index < 0:
+		shot_feedback += " 空枪"
 		return 1
+	shot_feedback += " 爆头" if hit_kind == 3 else (" 身体命中" if targets[hit_index].human else " 命中")
+	if hit_kind == 3 and (cover or stage_mode == "stop") and shown_speed <= Drills.STOP_SPEED:
+		metrics.add("valid_heads")
 	metrics.add("hits")
 	if hit_kind == 3:
 		metrics.add("heads")
-	if stage_mode in ["head", "peek"] and hit_kind != 3:
+	if (cover or stage_mode == "stop") and shown_speed > Drills.STOP_SPEED:
+		return hit_kind
+	if stage_mode in ["head", "peek", "stop"] and hit_kind != 3:
 		return hit_kind
 	var hit := targets[hit_index]
+	if hit.expired_on_screen:
+		metrics.add("expired", -1)
+		hit.expired_on_screen = false
+	hit.displayed = stage_mode in ["track", "reactive"] or continuous_target
 	if hit.seen_at >= 0.0:
 		metrics.add("reaction_n")
-		metrics.add("reaction_ms", maxf(0.0, stage_elapsed - hit.seen_at) * 1000.0)
+		metrics.add("reaction_ms", maxf(0.0, shown_time - hit.seen_at) * 1000.0)
 	match stage_mode:
-		"track":
+		"track", "reactive":
 			pass
 		"reaction":
 			hit.active = false
@@ -335,7 +380,7 @@ func shoot(look: Vector2) -> int:
 
 
 func _record_aim(target: Target, eye: Vector3, look: Vector2) -> void:
-	var point := target.point(false)
+	var point := target.point(true)
 	var wanted := RangeGeometry.angles(eye, point)
 	var end_error := RangeGeometry.angular_error(wanted, look)
 	metrics.record_error(end_error)
@@ -350,4 +395,6 @@ func report() -> Dictionary:
 	var result := total.snapshot(mode, duration)
 	result["stages"] = stages.duplicate(true)
 	result["level"] = level
+	result["seed"] = str(session_seed)
+	result["rules"] = 3
 	return result

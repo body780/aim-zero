@@ -35,7 +35,7 @@ func update_session(session: RangeSession) -> void:
 		"stop":
 			if not session.targets[0].active:
 				hint = "左右横移，触发目标"
-			elif session.settled_for + 0.000001 < Drills.SETTLE_SECONDS:
+			elif not session.accurate:
 				hint = "移动误差 · 松开方向键"
 			else:
 				hint = "已停稳 · 开火"
@@ -43,10 +43,12 @@ func update_session(session: RangeSession) -> void:
 			hint = "沿着掩体移动，保持头部高度"
 		"reaction":
 			hint = "亮靶后射击" if session.targets[0].active else "等待目标出现"
-		"track":
+		"track", "reactive":
 			hint = "按住左键，跟随移动目标"
 		_:
 			hint = ""
+	if session.stage_mode in ["peek","stop"] and not session.shot_feedback.is_empty():
+		hint += "    " + session.shot_feedback
 	if session is BenchmarkSession:
 		if session.spec.mag > 0:
 			hint = "装填中" if session.reloading else "弹匣  %d / %d" % [session.magazine,session.spec.mag]

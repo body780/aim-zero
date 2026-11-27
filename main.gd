@@ -25,15 +25,15 @@ var paused_at := 0
 var next_hud_time := 0
 var profile_dirty := false
 var smoke_mode := false
+var capture: AcceptanceCapture
+var capture_path := ""
 var finish_pending := false
 
 
 func _ready() -> void:
 	var user_args := OS.get_cmdline_user_args()
 	smoke_mode = "--smoke-test" in user_args
-	profile = LocalProfile.new("user://自动测试.json" if smoke_mode else "user://aim-zero.json")
-	if not smoke_mode:
-		profile.load_local()
+	profile = LocalProfile.new("user://自动测试.json") if smoke_mode else LocalProfile.open_for_app(OS.get_executable_path().get_base_dir(), OS.has_feature("editor"))
 	if not OS.has_feature("web"):
 		get_window().min_size = Vector2i(900, 562)
 	arena = TrainingArena.new()
@@ -52,12 +52,18 @@ func _ready() -> void:
 	open_menu()
 	if smoke_mode:
 		_smoke.call_deferred()
+	elif user_args.size() == 3 and user_args[0] == "--acceptance" and user_args[1] in Drills.MODES + ["reactive", "peek"]:
+		capture = AcceptanceCapture.new()
+		capture_path = user_args[2]
+		start.call_deferred(user_args[1], 120)
 
 
 func _process(delta: float) -> void:
 	if not playing or paused or finish_pending:
 		return
 	var now := Time.get_ticks_usec()
+	if capture and started:
+		capture.frame(now)
 	var view := get_viewport().get_visible_rect().size
 	session.present(Engine.get_physics_interpolation_fraction(), look, vertical_fov, view.aspect(), started)
 	arena.render_session(session, look, delta, now)
@@ -81,8 +87,7 @@ func _physics_process(_delta: float) -> void:
 		started = true
 		hud.ready_until = 0
 	var movement := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-	if session is BenchmarkSession:
-		session.trigger_held = shooting
+	session.trigger_held = shooting
 	if session.step(movement, look):
 		if session.finished:
 			finish_pending = true
@@ -92,14 +97,16 @@ func _physics_process(_delta: float) -> void:
 		arena.show_training(session, vertical_fov)
 		hud.update_session(session)
 		shooting = false
-	elif shooting and (session.stage_mode == "track" or (session is BenchmarkSession and session.automatic())):
+	elif shooting and (session.stage_mode in ["track", "reactive"] or (session is BenchmarkSession and session.automatic())):
 		_fire()
 
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		if playing and not paused and started:
-			var movement: Vector2 = event.screen_relative if raw_motion else event.relative
+			if capture:
+				capture.pending += 1
+			var movement: Vector2 = event.screen_relative
 			var yaw := look.x + yaw_remainder - movement.x * sensitivity_radians
 			if yaw < -PI or yaw >= PI:
 				yaw = wrapf(yaw, -PI, PI)
@@ -140,7 +147,7 @@ func start(mode: String, seconds: int) -> void:
 	_save_settings()
 	var adaptive := profile.adaptive_choices()
 	session = BenchmarkSession.new() if BenchmarkCatalog.ITEMS.has(mode) else RangeSession.new()
-	session.begin(mode, seconds, adaptive.level if mode == "adaptive" else 3, adaptive.order)
+	session.begin(mode, seconds, adaptive.level if mode == "adaptive" else profile.settings.difficulty, adaptive.order, 3001 if capture else 0)
 	playing = true
 	paused = false
 	started = false
@@ -165,6 +172,9 @@ func start(mode: String, seconds: int) -> void:
 func pause_training() -> void:
 	paused = true
 	shooting = false
+	if capture:
+		capture.previous = 0
+		capture.pending = 0
 	paused_at = Time.get_ticks_usec()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	Input.use_accumulated_input = true
@@ -187,7 +197,7 @@ func resume() -> void:
 
 
 func _fire() -> void:
-	var outcome := session.shoot(look)
+	var outcome := session.shoot(session.shown_look)
 	if outcome == 0:
 		return
 	var now := Time.get_ticks_usec()
@@ -200,6 +210,9 @@ func _finish() -> void:
 	if not is_instance_valid(hud) or session == null or not session.finished:
 		return
 	var report := session.report()
+	if capture:
+		get_tree().quit(0 if capture.save(capture_path) == OK else 1)
+		return
 	var result := profile.append(report)
 	open_report(report)
 	if result != OK:
@@ -335,6 +348,8 @@ func _smoke() -> void:
 	var expected_yaw := wrapf(-motion_total * sensitivity_radians, -PI, PI)
 	checks.append(absf(wrapf(look.x - expected_yaw, -PI, PI)) < 0.001)
 	look = RangeGeometry.angles(session.visible_eye, session.targets[0].point(false))
+	await get_tree().process_frame
+	await get_tree().process_frame
 	var click := InputEventMouseButton.new()
 	click.button_index = MOUSE_BUTTON_LEFT
 	click.pressed = true

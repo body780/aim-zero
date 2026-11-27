@@ -71,6 +71,7 @@ func run() -> void:
 	expect(micro.targets[0].radius < grid.targets[0].radius and absf(micro.targets[0].position.x) < 1.0, "微调小靶与邻近位置")
 	show(micro)
 	wait_ticks(micro, 48)
+	show(micro)
 	expect(micro.shoot(aim(micro, micro.targets[0].position)) == 2 and micro.metrics.values.reaction_n == 1 and is_equal_approx(micro.metrics.values.reaction_ms, 200.0), "实际曝光到命中的反应时间")
 	var flick := TrainingMetrics.new()
 	flick.record_flick(Vector2(0.2, 0.0), Vector2(-0.04, 0.0), 0.02)
@@ -90,12 +91,12 @@ func run() -> void:
 	var stop := start("stop")
 	expect(not stop.targets[0].active, "急停初始等待横移")
 	wait_ticks(stop, 84, Vector2.RIGHT)
-	expect(stop.targets[0].active and stop.settled_for == 0.0, "移动触发急停靶并清空稳定时间")
+	expect(stop.targets[0].active and not stop.accurate, "移动触发急停靶并清空稳定时间")
 	show(stop)
 	stop.shoot(aim(stop, stop.targets[0].position))
 	expect(stop.metrics.values.unsettled == 1, "移动开枪记入误差样本")
 	wait_ticks(stop, 72)
-	expect(stop.settled_for == Drills.SETTLE_SECONDS and stop.velocity.is_zero_approx(), "松键后恢复精度")
+	expect(stop.accurate and stop.velocity.is_zero_approx(), "松键后恢复精度")
 
 	var peek := start("peek")
 	peek.targets[0].position = Vector3(0, 0, -9.2)
@@ -116,6 +117,7 @@ func run() -> void:
 	wait_ticks(reaction, ceili(reaction.pending_at / Drills.STEP) + 1)
 	show(reaction)
 	wait_ticks(reaction, 60)
+	show(reaction)
 	expect(reaction.targets[0].active, "亮靶有效时窗")
 	expect(reaction.shoot(aim(reaction, reaction.targets[0].position)) == 2 and absf(reaction.metrics.values.reaction_ms - 250.0) < 0.01, "定时亮靶与实测反应")
 	wait_ticks(reaction, 1000)
@@ -157,6 +159,7 @@ func run() -> void:
 func _paced(fps: int) -> Array:
 	var tracking := start("track")
 	var moving := start("stop")
+	show(tracking)
 	var draw_accumulator := 0
 	for tick in 1800:
 		var look := aim(tracking, tracking.targets[0].position)
@@ -169,7 +172,7 @@ func _paced(fps: int) -> Array:
 			moving.present(0.5, Vector2.ZERO, Drills.vertical_fov(103.0), 16.0 / 9.0)
 		if tick % 24 == 0:
 			tracking.shoot(aim(tracking, tracking.targets[0].position))
-	return [tracking.targets[0].position, tracking.elapsed, tracking.metrics.values.hits, tracking.metrics.values.track_on, moving.player, moving.settled_for]
+	return [tracking.targets[0].position, tracking.elapsed, tracking.metrics.values.hits, tracking.metrics.values.track_on, moving.player, moving.accurate]
 
 
 func _test_performance() -> void:
@@ -224,6 +227,7 @@ func _focus_tests() -> void:
 			var bins := {}
 			for repeat in 100:
 				var old := t.position
+				show(bench,aim(bench,old))
 				bench.shoot(aim(bench,old))
 				bins[Vector2i(t.position.x*20,t.position.y*20)] = true
 				expect(old.distance_to(t.position)>t.radius*3.9,name+" 刷新间距")
@@ -255,6 +259,7 @@ func _focus_tests() -> void:
 func _render_trace(name: String, fps: int) -> Array:
 	var bench := BenchmarkSession.new()
 	bench.begin(name,60,3,[],234)
+	show(bench)
 	var credit := 0
 	for tick in 960:
 		var look := aim(bench,bench.targets[0].position)

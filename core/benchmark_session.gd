@@ -9,7 +9,6 @@ var speeds := PackedVector3Array()
 var desired := Vector3.ZERO
 var magazine := 0
 var reloading := false
-var trigger_held := false
 var bearing := 0.0
 var radial_distance := 4.4
 var elevation := 0.0
@@ -57,6 +56,7 @@ func _spawn(i: int) -> void:
 	t.radius = spec.radius
 	t.active = true
 	t.visible = false
+	t.displayed = false
 	t.seen_at = -1
 	t.born = stage_elapsed
 	t.base = pos

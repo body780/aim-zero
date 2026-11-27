@@ -98,7 +98,7 @@ func _nav(body: VBoxContainer) -> void:
 	body.add_child(top)
 	_brand(top)
 	_space(top)
-	_button(top, "Viscose S2 场景库", func(): benchmarks())
+	_button(top, "经典训练", func(): benchmarks())
 	_button(top, "训练记录", app.open_history)
 	_button(top, "设置", app.open_settings)
 	_button(top, "操作指南", app.open_guide)
@@ -107,8 +107,10 @@ func _nav(body: VBoxContainer) -> void:
 
 func benchmarks() -> void:
 	var body := _shell(true)
-	_heading(body, "Viscose S2 精选", "五项专项训练 · 每轮 60 秒")
+	_heading(body, "Viscose S2 精选", "经典专项 · 每轮 60 秒")
 	var list := _scroller(body)
+	for mode: String in ["reaction", "adaptive"]:
+		_button(list, Drills.title(mode), func(): app.start(mode, seconds))
 	for title: String in BenchmarkCatalog.ITEMS:
 		var entry := _button(list, "%s    %s" % [BenchmarkCatalog.ITEMS[title].label,title], func(): app.start(title,60))
 		entry.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -125,6 +127,17 @@ func _heading(body: VBoxContainer, title: String, detail: String) -> void:
 	if not detail.is_empty():
 		body.add_child(RangeStyle.text(detail, 17, RangeStyle.MUTED))
 
+
+func _choose(mode: String) -> void:
+	if mode not in ["track", "stop"]:
+		app.start(mode, seconds)
+		return
+	var body := _shell(true)
+	_heading(body, Drills.title(mode), "%d 秒" % seconds)
+	var options := ["track", "reactive"] if mode == "track" else ["stop", "peek"]
+	for variant: String in options:
+		var label: String = {"track":"平滑跟枪", "reactive":"反应跟枪", "stop":"空场急停", "peek":"掩体探头"}[variant]
+		_button(body, label, func(): app.start(variant, seconds))
 
 func menu(profile: LocalProfile) -> void:
 	var body := _shell(false)
@@ -157,7 +170,7 @@ func menu(profile: LocalProfile) -> void:
 	var recent: Dictionary = profile.records.back() if not profile.records.is_empty() else {}
 	if not recent.is_empty():
 		_button(primary, "查看最近报告", func(): app.open_report(recent))
-	hero.add_child(RangeStyle.text("快速定位  2 分钟     爆头  2 分钟     急停  3 分钟     预瞄  3 分钟", 15, RangeStyle.MUTED))
+	hero.add_child(RangeStyle.text("定位 90 秒   微调 90 秒   头线 120 秒   跟枪 120 秒   急停 180 秒", 15, RangeStyle.MUTED))
 	_space(hero)
 
 	var section := HBoxContainer.new()
@@ -191,7 +204,7 @@ func menu(profile: LocalProfile) -> void:
 	}
 	for index in Drills.MODES.size():
 		var mode: String = Drills.MODES[index]
-		var card := _button(grid, "", func(): app.start(mode, seconds))
+		var card := _button(grid, "", func(): _choose(mode))
 		card.custom_minimum_size.y = 99
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card.tooltip_text = Drills.DETAILS[mode]
@@ -220,7 +233,7 @@ func menu(profile: LocalProfile) -> void:
 	body.add_child(footer)
 	footer.add_child(RangeStyle.text("鼠标瞄准   ·   左键射击   ·   W A S D 移动   ·   Esc 暂停", 14, RangeStyle.MUTED))
 	_space(footer)
-	status = RangeStyle.text("训练记录保存在本机", 14, RangeStyle.SUBTLE)
+	status = RangeStyle.text("训练记录保存在本机" if profile.path.begins_with("user://") else "便携存档 · 软件目录", 14, RangeStyle.SUBTLE)
 	footer.add_child(status)
 
 
@@ -328,11 +341,12 @@ func settings(notice: String = "") -> void:
 
 	var mouse := _panel(left, "鼠标与视野")
 	_numeric(mouse, "游戏灵敏度", "sensitivity", Vector3(0.01, 10.0, 0.001), "参考无畏契约的游戏内灵敏度")
+	_numeric(mouse, "专项难度", "difficulty", Vector3(1, 7, 1), "3 为标准档；高档缩小球靶并提高跟枪速度")
 	_numeric(mouse, "鼠标 DPI", "dpi", Vector3(100, 35000, 1), "填写鼠标当前使用的 DPI")
 	edpi = RangeStyle.text("", 17, RangeStyle.GREEN)
 	mouse.add_child(edpi)
 	_numeric(mouse, "水平视野（16∶9 等效）", "fov", Vector3(75, 120, 0.5), "默认 103°，宽高比变化时保持垂直视野")
-	_toggle(mouse, "原始鼠标输入", "raw", "捕获时使用屏幕相对位移，关闭事件累积")
+	_toggle(mouse, "逐事件鼠标输入", "raw", "关闭时合并位移，两种模式均采用屏幕相对计数")
 	_numeric(mouse, "射击与命中音量", "audio", Vector3(0, 1, 0.01), "0 为静音，1 为最大音量")
 
 	var display_panel := _panel(right, "画面与性能")
@@ -388,7 +402,7 @@ func settings(notice: String = "") -> void:
 	_button(buttons, "导出备份", func(): app.backup(data_path.text.strip_edges(), false))
 	_button(buttons, "导入备份", func(): app.backup(data_path.text.strip_edges(), true))
 	if not OS.has_feature("web"):
-		_button(buttons, "打开数据文件夹", func(): OS.shell_open(ProjectSettings.globalize_path("user://")))
+		_button(buttons, "打开数据文件夹", func(): OS.shell_open(ProjectSettings.globalize_path(app.profile.path).get_base_dir()))
 	status = RangeStyle.text(notice, 15, RangeStyle.GREEN)
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	data.add_child(status)
@@ -398,7 +412,7 @@ func settings(notice: String = "") -> void:
 func _refresh_settings() -> void:
 	if is_instance_valid(edpi):
 		var data: Dictionary = app.profile.settings
-		edpi.text = "等效灵敏度（eDPI） %.1f     转身一圈 %.1f 厘米" % [data.dpi * data.sensitivity, 360.0 * 2.54 / (data.dpi * data.sensitivity * Drills.YAW_PER_COUNT)]
+		edpi.text = "等效灵敏度（eDPI） %.1f     转身一圈 %.1f 厘米" % [data.dpi * data.sensitivity, Drills.cm_per_turn(data.dpi, data.sensitivity)]
 	if is_instance_valid(crosshair_preview):
 		crosshair_preview.queue_redraw()
 
@@ -483,7 +497,7 @@ func report(data: Dictionary) -> void:
 	content.add_child(row)
 	var human_hits := 0.0
 	for stage: Dictionary in data.stages:
-		if stage.mode in ["head", "peek"]:
+		if stage.mode in ["head", "peek"] or (stage.mode == "stop" and data.get("rules", 2) >= 3):
 			human_hits += stage.hits
 	_stat(row, "命中率", TrainingMetrics.percent(data.hits, data.shots))
 	if BenchmarkCatalog.known(data.mode):
@@ -501,6 +515,10 @@ func report(data: Dictionary) -> void:
 	_stat(row, "平均反应时间", TrainingMetrics.average_reaction(data))
 	_stat(row, "每分钟命中", "%.1f" % TrainingMetrics.hits_per_minute(data))
 	_stat(row, "拉枪 过度／不足", "%d / %d" % [int(data.over), int(data.under)] if data.over + data.under + data.on > 0 else "—")
+	if data.get("rules", 2) >= 3:
+		var scores := _panel(content, "专项反馈")
+		for stage: Dictionary in data.stages:
+			scores.add_child(RangeStyle.text(TrainingMetrics.feedback(stage), 17))
 	var plots := HBoxContainer.new()
 	plots.add_theme_constant_override("separation", 13)
 	content.add_child(plots)
@@ -513,7 +531,7 @@ func report(data: Dictionary) -> void:
 	var history_panel := _panel(plots, "历史命中率")
 	var effect := RangePlot.new()
 	for report_data: Dictionary in app.profile.records:
-		if report_data.mode == data.mode and report_data.shots > 0:
+		if report_data.level == data.level and report_data.get("rules",2) == data.get("rules",2) and report_data.mode == data.mode and report_data.shots > 0:
 			effect.values.append(TrainingMetrics.ratio(report_data.hits, report_data.shots))
 	if effect.values.size() > 20:
 		effect.values = effect.values.slice(-20)
@@ -566,7 +584,7 @@ func _suggestions(data: Dictionary) -> Array[String]:
 			notes.append("本轮命中率低于 55%。先降低击发节奏，用六球速射练习准星到位后开枪。")
 		var human_hits := 0.0
 		for stage: Dictionary in data.stages:
-			if stage.mode in ["head", "peek"]:
+			if stage.mode in ["head", "peek"] or (stage.mode == "stop" and data.get("rules", 2) >= 3):
 				human_hits += stage.hits
 		if human_hits >= 4 and TrainingMetrics.ratio(data.heads, human_hits) < 0.45:
 			notes.append("人形命中多落在躯干。用爆头训练练习在转向前保持头部高度。")

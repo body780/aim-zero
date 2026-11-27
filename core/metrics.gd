@@ -8,7 +8,7 @@ const X_LIMIT := 12.0
 const Y_LIMIT := 8.0
 
 const COUNTERS := [
-	"eliminations",
+	"eliminations", "release", "reverse", "valid_heads",
 	"shots", "hits", "heads", "reaction_n", "reaction_ms", "over", "under", "on",
 	"unsettled", "stop_shots", "expired", "opportunities", "track_ticks", "track_on", "preaim_n", "preaim_deg"
 ]
@@ -93,3 +93,17 @@ static func drill_priority(data: Dictionary) -> float:
 	if mode == "stop":
 		return maxf(ratio(data.unsettled, data.stop_shots), 1.0 - ratio(data.hits, data.shots))
 	return 1.0 - ratio(data.hits, data.shots)
+
+static func feedback(stage: Dictionary) -> String:
+	match stage.mode:
+		"grid":
+			return "定位 · 每分钟有效命中 %.1f" % hits_per_minute(stage)
+		"micro":
+			return "微调 · 首次曝光至命中 %s，过拉 %d 次，欠拉 %d 次" % [average_reaction(stage), stage.over, stage.under]
+		"head":
+			return "头线 · 有效爆头 %d，身体命中 %d，空枪 %d" % [stage.heads, stage.hits-stage.heads, stage.shots-stage.hits]
+		"track", "reactive":
+			return "跟枪 · 持续贴靶 %s（%.2f 秒）" % [percent(stage.track_on,stage.track_ticks), stage.track_on]
+		"stop", "peek":
+			return "急停 · 停稳爆头 %d，提前开枪 %d，身体 %d，空枪 %d；放键／反向停稳发射 %d／%d" % [stage.valid_heads, stage.unsettled,stage.hits-stage.heads,stage.shots-stage.hits,stage.release,stage.reverse]
+	return Drills.title(stage.mode)

@@ -59,6 +59,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw '项目导入失败' }
           & $godot --headless --path . --script tests/run.gd
           if ($LASTEXITCODE -ne 0) { throw '训练自动化测试失败' }
+          & $godot --headless --path . --script tests/beta.gd
+          if ($LASTEXITCODE -ne 0) { throw 'Beta regression tests failed' }
           New-Item -ItemType Directory -Force build/windows | Out-Null
           & $godot --headless --path . --export-release Windows build/windows/AIM-ZERO.exe
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path build/windows/AIM-ZERO.exe)) { throw 'Windows 导出失败' }
@@ -71,7 +73,7 @@ jobs:
           if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Windows 运行测试超时' }
           if (Test-Path $log) { Get-Content $log }
           if ($process.ExitCode -ne 0 -or -not (Test-Path $log) -or -not (Select-String -Quiet -SimpleMatch -Path $log 'AIM_ZERO_SMOKE_OK')) { throw 'Windows 运行测试失败' }
-          Copy-Item '使用说明.txt' build/windows/
+          Copy-Item '使用说明.txt', portable.flag, CHANGELOG.md, REFACTOR.md, REFERENCES.md, tools/acceptance.ps1 build/windows/
           New-Item -ItemType Directory -Force build/windows/licenses | Out-Null
           Copy-Item licenses/*.txt, assets/LICENSE-font.txt build/windows/licenses/
           Compress-Archive -Path build/windows/* -DestinationPath build/AIM-ZERO-Windows.zip -CompressionLevel Optimal -Force
