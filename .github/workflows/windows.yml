@@ -87,3 +87,27 @@ jobs:
             build/AIM-ZERO-Windows.zip.sha256
           compression-level: 0
           if-no-files-found: error
+
+  publish-beta:
+    if: github.ref == 'refs/tags/v0.3.0-beta.1'
+    needs: build-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: AIM-ZERO-Windows
+          path: dist
+      - name: 校验并发布测试版
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum -c AIM-ZERO-Windows.zip.sha256
+          unzip -tq AIM-ZERO-Windows.zip
+          unzip -j AIM-ZERO-Windows.zip AIM-ZERO.exe
+          sha256sum AIM-ZERO.exe AIM-ZERO-Windows.zip > SHA256SUMS.txt
+          gh release create "$GITHUB_REF_NAME" --verify-tag --prerelease --latest=false --title 'AIM ZERO v0.3.0-beta.1' --notes-file ../CHANGELOG.md AIM-ZERO-Windows.zip AIM-ZERO.exe SHA256SUMS.txt
